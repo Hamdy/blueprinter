@@ -111,13 +111,14 @@ describe Blueprinter::V2::Render do
 
   context 'around_result' do
     it 'runs around the entire result' do
-      widget_blueprint.extension do
+      extension = Class.new(Blueprinter::Extension) do
         def initialize = around_result :hook
         def hook(ctx)
           result = yield ctx
           result.merge({ foo: 'bar' })
         end
       end
+      widget_blueprint.add extension.new
       widget = { name: 'Foo', description: 'About', category: { n: 'Bar' } }
       render = described_class.new(widget, {}, blueprint: widget_blueprint, collection: false, instances:)
 
@@ -130,13 +131,14 @@ describe Blueprinter::V2::Render do
     end
 
     it 'can change the blueprint (class)' do
-      widget_blueprint.extension do
+      extension = Class.new(Blueprinter::Extension) do
         def initialize = around_result :hook
         def hook(ctx)
           ctx.blueprint = Class.new(Blueprinter::V2::Base) { field :name }
           yield ctx
         end
       end
+      widget_blueprint.add extension.new
       widget = { name: 'Foo', description: 'About', category: { n: 'Bar' } }
       render = described_class.new(widget, {}, blueprint: widget_blueprint, collection: false, instances:)
 
@@ -144,13 +146,14 @@ describe Blueprinter::V2::Render do
     end
 
     it 'can change the blueprint (instance)' do
-      widget_blueprint.extension do
+      extension = Class.new(Blueprinter::Extension) do
         def initialize = around_result :hook
         def hook(ctx)
           ctx.blueprint = Class.new(Blueprinter::V2::Base) { field :name }.new
           yield ctx
         end
       end
+      widget_blueprint.add extension.new
       widget = { name: 'Foo', description: 'About', category: { n: 'Bar' } }
       render = described_class.new(widget, {}, blueprint: widget_blueprint, collection: false, instances:)
 
@@ -158,13 +161,14 @@ describe Blueprinter::V2::Render do
     end
 
     it 'can change the object' do
-      widget_blueprint.extension do
+      extension = Class.new(Blueprinter::Extension) do
         def initialize = around_result :hook
         def hook(ctx)
           ctx.object = ctx.object.merge({ name: 'Bar' })
           yield ctx
         end
       end
+      widget_blueprint.add extension.new
       widget = { name: 'Foo', description: 'About', category: { n: 'Bar' } }
       render = described_class.new(widget, {}, blueprint: widget_blueprint, collection: false, instances:)
 
@@ -176,7 +180,7 @@ describe Blueprinter::V2::Render do
     end
 
     it 'can change the object (different blueprint)' do
-      widget_blueprint.extension do
+      extension = Class.new(Blueprinter::Extension) do
         def initialize = around_result :hook
         def hook(ctx)
           ctx.blueprint = Class.new(Blueprinter::V2::Base) { field :name }
@@ -184,6 +188,7 @@ describe Blueprinter::V2::Render do
           yield ctx
         end
       end
+      widget_blueprint.add extension.new
       widget = { name: 'Foo', description: 'About', category: { n: 'Bar' } }
       render = described_class.new(widget, {}, blueprint: widget_blueprint, collection: false, instances:)
 
@@ -191,7 +196,7 @@ describe Blueprinter::V2::Render do
     end
 
     it 'can change the options' do
-      widget_blueprint.extension do
+      extension1 = Class.new(Blueprinter::Extension) do
         def initialize = around_result :hook
         def hook(ctx)
           num = ctx.options[:num] || 0
@@ -199,13 +204,14 @@ describe Blueprinter::V2::Render do
           yield ctx
         end
       end
-      widget_blueprint.extension do
+      extension2 = Class.new(Blueprinter::Extension) do
         def initialize = around_result :hook
         def hook(ctx)
           res = yield ctx
           res.merge({ num: ctx.options[:num] })
         end
       end
+      widget_blueprint.add extension1.new, extension2.new
       widget = { name: 'Foo', description: 'About', category: { n: 'Bar' } }
       render = described_class.new(widget, { num: 42 }, blueprint: widget_blueprint, collection: false, instances:)
 
@@ -218,7 +224,7 @@ describe Blueprinter::V2::Render do
     end
 
     it 'can change the options (different blueprint)' do
-      widget_blueprint.extension do
+      extension = Class.new(Blueprinter::Extension) do
         def initialize = around_result :hook
         def hook(ctx)
           num = ctx.options[:num] || 0
@@ -231,6 +237,7 @@ describe Blueprinter::V2::Render do
           yield ctx
         end
       end
+      widget_blueprint.add extension.new
       widget = { name: 'Foo', description: 'About', category: { n: 'Bar' } }
       render = described_class.new(widget, { num: 42 }, blueprint: widget_blueprint, collection: false, instances:)
 
@@ -238,13 +245,14 @@ describe Blueprinter::V2::Render do
     end
 
     it 'can change the format' do
-      widget_blueprint.extension do
+      extension = Class.new(Blueprinter::Extension) do
         def initialize = around_result :hook
         def hook(ctx)
           ctx.format = :yaml
           yield ctx
         end
       end
+      widget_blueprint.add extension.new
       widget = { name: 'Foo', description: 'About', category: { n: 'Bar' } }
       render = described_class.new(widget, { num: 42 }, blueprint: widget_blueprint, collection: false, instances:)
 
@@ -252,7 +260,7 @@ describe Blueprinter::V2::Render do
     end
 
     it 'can change the format (different blueprint)' do
-      widget_blueprint.extension do
+      extension = Class.new(Blueprinter::Extension) do
         def initialize = around_result :hook
         def hook(ctx)
           ctx.format = :yaml
@@ -260,6 +268,7 @@ describe Blueprinter::V2::Render do
           yield ctx
         end
       end
+      widget_blueprint.add extension.new
       widget = { name: 'Foo', description: 'About', category: { n: 'Bar' } }
       render = described_class.new(widget, { num: 42 }, blueprint: widget_blueprint, collection: false, instances:)
 
@@ -267,7 +276,7 @@ describe Blueprinter::V2::Render do
     end
 
     it 'can output a custom format' do
-      widget_blueprint.extension do
+      extension = Class.new(Blueprinter::Extension) do
         def initialize = around_result :hook
         def hook(ctx)
           case ctx.format
@@ -279,6 +288,7 @@ describe Blueprinter::V2::Render do
           end
         end
       end
+      widget_blueprint.add extension.new
 
       widget = { name: 'Foo', description: 'About', category: { n: 'Bar' } }
       render = described_class.new(widget, { num: 42 }, blueprint: widget_blueprint, collection: false, instances:)
