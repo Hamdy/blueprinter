@@ -23,6 +23,7 @@ module Blueprinter
     LIVE_ATTRIBUTES = %i[
       association_default
       deprecations
+      encoder
       generator
       method
     ].freeze
@@ -65,6 +66,7 @@ module Blueprinter
       @datetime_format = nil
       @default_transformers = []
       @deprecations = :stderror
+      @encoder = nil
       @extensions = Extensions.new
       @extractor_default = AutoExtractor
       @field_default = nil
@@ -87,7 +89,14 @@ module Blueprinter
       ].compact
     end
 
+    # Serializes the prepared hash to a JSON string. When an +encoder+ callable is configured it is
+    # invoked directly -- resolved once at configure time rather than dispatched via +public_send+
+    # per render -- which also lets callers express encoders that need options (e.g.
+    # +->(hash) { Oj.dump(hash, mode: :rails) }+) without a shim class. Falls back to the
+    # +generator+/+method+ pair for backwards compatibility.
     def jsonify(blob)
+      return encoder.call(blob) if encoder
+
       generator.public_send(method, blob)
     end
 

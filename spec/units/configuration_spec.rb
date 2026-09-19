@@ -111,6 +111,27 @@ describe 'Blueprinter::Configuration' do
     end
   end
 
+  describe '#jsonify' do
+    after { reset_blueprinter_config! }
+
+    it 'uses the generator/method pair by default' do
+      expect(Blueprinter.configuration.jsonify({ a: 1 })).to eq('{"a":1}')
+    end
+
+    it 'uses a configured encoder callable when set' do
+      Blueprinter.configure { |config| config.encoder = ->(hash) { "keys:#{hash.keys.join(',')}" } }
+      expect(Blueprinter.configuration.jsonify({ a: 1, b: 2 })).to eq('keys:a,b')
+    end
+
+    it 'prefers the encoder over the generator/method pair' do
+      Blueprinter.configure do |config|
+        config.generator = JSON
+        config.encoder = ->(_hash) { 'from encoder' }
+      end
+      expect(Blueprinter.configuration.jsonify({ a: 1 })).to eq('from encoder')
+    end
+  end
+
   # The generation counter is what makes compiled/memoized state (Field conditions, ViewCollection
   # caches) safe: anything that mutates a configuration value those caches depend on bumps it, so a
   # later render re-resolves instead of serving behaviour derived from the old configuration.
