@@ -10,6 +10,9 @@ module Blueprinter
   module Rendering
     include TypeHelpers
 
+    # Keys consumed by render itself rather than passed through to fields as local options.
+    RESERVED_OPTIONS = %i[view root meta].freeze
+
     # Generates a JSON formatted String represantation of the provided object.
     #
     # @param object [Object] the Object to serialize.
@@ -124,8 +127,10 @@ module Blueprinter
 
     def prepare_data(object, view_name, local_options)
       # Since we're currently providing the current view in the local_options hash when we extract fields, we can merge
-      # it in ahead of time to avoid allocating a new hash for every field extraction.
-      local_options_with_view = local_options.merge(view: view_name)
+      # it in ahead of time to avoid allocating a new hash for every field extraction. When there are no local options
+      # (the common case), build the single-entry hash directly rather than paying for Hash#merge.
+      local_options_with_view =
+        local_options.empty? ? { view: view_name } : local_options.merge(view: view_name)
 
       # Loop invariants: the compiled render closures and transformers for this view are identical
       # for every object in a collection, so resolve them once here rather than per object.
@@ -148,6 +153,15 @@ module Blueprinter
       transformers.each { |transformer| transformer.transform(result_hash, object, local_options) }
 
       result_hash
+    end
+
+    # Strips the keys render consumes, leaving only the local options passed through to fields.
+    # Returns the hash untouched when there is nothing to strip (the common no-options render),
+    # avoiding a throwaway Hash#except allocation.
+    def local_options_from(options)
+      return options if options.empty?
+
+      options.except(*RESERVED_OPTIONS)
     end
 
     def jsonify(data)
@@ -174,7 +188,7 @@ module Blueprinter
       prepared_object = hashify(
         object,
         view_name:,
-        local_options: options.except(:view, :root, :meta)
+        local_options: local_options_from(options)
       )
       object_with_root = apply_root_key(
         object: prepared_object,
