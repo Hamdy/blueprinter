@@ -110,4 +110,38 @@ describe 'Blueprinter::Configuration' do
       expect(actual).to be(false)
     end
   end
+
+  # The generation counter is what makes compiled/memoized state (Field conditions, ViewCollection
+  # caches) safe: anything that mutates a configuration value those caches depend on bumps it, so a
+  # later render re-resolves instead of serving behaviour derived from the old configuration.
+  describe '.generation' do
+    after { reset_blueprinter_config! }
+
+    Blueprinter::Configuration::COMPILED_ATTRIBUTES.each do |attribute|
+      it "bumps when the compiled attribute ##{attribute} is written" do
+        expect { Blueprinter.configuration.public_send(:"#{attribute}=", nil) }
+          .to change(Blueprinter::Configuration, :generation).by(1)
+      end
+    end
+
+    Blueprinter::Configuration::LIVE_ATTRIBUTES.each do |attribute|
+      it "does not bump when the live attribute ##{attribute} is written" do
+        expect { Blueprinter.configuration.public_send(:"#{attribute}=", nil) }
+          .not_to change(Blueprinter::Configuration, :generation)
+      end
+    end
+
+    it 'bumps when the default extractor is changed' do
+      extractor = Class.new(Blueprinter::AutoExtractor)
+      expect { Blueprinter.configuration.extractor_default = extractor }
+        .to change(Blueprinter::Configuration, :generation).by(1)
+    end
+
+    # reset_configuration! installs a brand new Configuration whose defaults differ from whatever
+    # was in effect, so it must invalidate compiled caches too.
+    it 'bumps on reset_configuration!' do
+      expect { Blueprinter.reset_configuration! }
+        .to change(Blueprinter::Configuration, :generation).by(1)
+    end
+  end
 end

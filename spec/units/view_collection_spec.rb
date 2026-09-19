@@ -220,6 +220,20 @@ describe 'ViewCollection' do
       expect(fields_after).to eq(fields_before)
     end
 
+    it 'rebuilds the cache when the configuration generation changes' do
+      fields_before = view_collection.fields_for(:view)
+      compiled_before = view_collection.compiled_fields_for(:view)
+
+      # A compiled-attribute writer bumps Configuration.generation; the compiled render pipeline
+      # bakes in global config, so the cache must rebuild rather than serve stale closures.
+      Blueprinter.configure { |config| config.field_default = 'N/A' }
+
+      expect(view_collection.fields_for(:view)).not_to equal(fields_before)
+      expect(view_collection.compiled_fields_for(:view)).not_to equal(compiled_before)
+    ensure
+      reset_blueprinter_config!
+    end
+
     it 'invalidates cache when invalidate_cache! is called after view mutation' do
       # Build the cache by accessing fields
       fields_before = view_collection.fields_for(:view)

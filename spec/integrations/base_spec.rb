@@ -692,6 +692,52 @@ describe '::Base' do
     end
   end
 
+  # The invalidation caveat: ViewCollection caches a compiled render pipeline per view, and that
+  # pipeline bakes in global config (datetime_format, field_default, :if/:unless) resolved at first
+  # render. The Configuration generation counter is what keeps it honest -- mutating any of those
+  # after a render must still take effect on the next render.
+  describe 'reconfiguring global config after an initial render' do
+    let(:blueprint) do
+      Class.new(Blueprinter::Base) do
+        identifier :id
+        field :first_name
+        field :birthday
+      end
+    end
+
+    after { reset_blueprinter_config! }
+
+    it 'applies a global field_default set after the first render' do
+      object = OpenStruct.new(id: 1, first_name: nil, birthday: nil)
+
+      expect(blueprint.render_as_hash(object)).to eq(id: 1, first_name: nil, birthday: nil)
+
+      Blueprinter.configure { |config| config.field_default = 'N/A' }
+
+      expect(blueprint.render_as_hash(object)).to eq(id: 1, first_name: 'N/A', birthday: 'N/A')
+    end
+
+    it 'applies a global datetime_format set after the first render' do
+      object = OpenStruct.new(id: 1, first_name: 'Meg', birthday: Date.new(1994, 3, 4))
+
+      expect(blueprint.render_as_hash(object)).to eq(id: 1, first_name: 'Meg', birthday: Date.new(1994, 3, 4))
+
+      Blueprinter.configure { |config| config.datetime_format = '%Y' }
+
+      expect(blueprint.render_as_hash(object)).to eq(id: 1, first_name: 'Meg', birthday: '1994')
+    end
+
+    it 'applies a global :if set after the first render' do
+      object = OpenStruct.new(id: 1, first_name: 'Meg', birthday: nil)
+
+      expect(blueprint.render_as_hash(object)).to include(:first_name)
+
+      Blueprinter.configure { |config| config.if = ->(_name, _object, _opts) { false } }
+
+      expect(blueprint.render_as_hash(object)).to eq({})
+    end
+  end
+
   describe 'identifier' do
     let(:rendered) do
       blueprint.render_as_hash(OpenStruct.new(uid: 42))
