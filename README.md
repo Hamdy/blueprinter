@@ -866,6 +866,17 @@ Output:
 
 _NOTE:_ The field-level setting overrides the global config setting (for the field) if both are set.
 
+#### Performance note
+
+`datetime_format` is also a performance lever, not just a cosmetic one. Ruby's stdlib JSON encoder has fast C paths for String/Integer/Float/Hash/Array but falls back to slow, allocation-heavy generic dispatch for raw `Time`/`DateTime` values. Formatting datetimes to a String (or Integer) via `datetime_format` before encoding lets the encoder stay on its fast path:
+
+| Encoding 1000 rows with a datetime field | renders/sec | encode allocations |
+|------------------------------------------|------------:|-------------------:|
+| raw `Time`                               |         899 |              4,005 |
+| pre-formatted via `datetime_format`      |      13,594 |                  2 |
+
+_Measured on Ruby 3.3.9; re-measure on your own Ruby, but the direction is large and consistent._ If you don't need raw `Time` objects in your output, setting a `datetime_format` is one of the cheapest wins available.
+
 </details>
 
 <details>
@@ -1246,19 +1257,52 @@ gem install blueprinter
 
 You should also have `require 'json'` already in your project if you are not using Rails or if you are not using Oj.
 
-## OJ
+## JSON encoder
 
-By default, Blueprinter will be calling `JSON.generate(object)` internally and it expects that you have `require 'json'` already in your project's code. You may use `Oj` to generate in place of `JSON` like so:
+By default, Blueprinter serializes the prepared hash with `JSON.generate` from Ruby's standard library, and it expects that you have `require 'json'` already in your project's code. On modern Ruby the stdlib `json` C extension is already fast for the primitive payloads Blueprinter produces (strings, numbers, booleans, hashes, arrays), so for most applications the default is the right — and fastest — choice.
+
+### `config.generator` (drop-in `JSON.generate` replacements)
+
+You can swap in any object that responds to the configured `method` (default `:generate`):
 
 ```ruby
-require 'oj' # you can skip this if OJ has already been required.
+require 'oj' # you can skip this if Oj has already been required.
 
 Blueprinter.configure do |config|
   config.generator = Oj # default is JSON
 end
 ```
 
-Ensure that you have the `Oj` gem installed in your Gemfile if you haven't already:
+Be aware, though, that `config.generator = Oj` routes to `Oj.generate`, which in our measurements was **slower and more allocation-heavy than the stdlib default** — so this is a regression, not an optimization:
+
+| Encoder (1000-row payload)         | renders/sec | allocations |
+|------------------------------------|------------:|------------:|
+| `JSON.generate` (default)          |         812 |       4,004 |
+| `Oj.dump(mode: :compat)`           |         638 |       5,004 |
+| `Oj.generate` (`generator = Oj`)   |         558 |       9,004 |
+
+_Measured on Ruby 3.3.9 / Oj 3.16.15; re-measure on your own Ruby before acting, as encoder performance varies by version._ Unless you have a specific reason, leaving the default `JSON` generator is the fastest option.
+
+### `config.encoder` (a callable, e.g. Oj `mode: :rails`)
+
+The one Oj configuration that is meaningfully faster than the stdlib is `Oj.dump(hash, mode: :rails)` (roughly 2.4× the renders/sec of the default in our measurements) — but it needs an option that the `generator`/`method` pair cannot express. For that, configure `config.encoder`, a callable that receives the prepared hash and returns a string:
+
+```ruby
+require 'oj'
+
+Blueprinter.configure do |config|
+  config.encoder = ->(hash) { Oj.dump(hash, mode: :rails) }
+end
+```
+
+`config.encoder` takes precedence over `config.generator`/`config.method`, and the callable is resolved once at configure time rather than dispatched per render.
+
+**Two caveats with `mode: :rails`:**
+
+1. Its `Time` output differs from the stdlib default — ISO-8601 with nanosecond precision (e.g. `2026-09-20T17:18:36.000000000+03:00` instead of `2026-09-20 17:18:36 +0300`). `Date` and `DateTime` are unchanged (already ISO-8601 under both). This is an API-visible change for any consumer parsing a field that emits a raw `Time`; use `datetime_format` (see "Custom Formatting for Dates and Times" above) to emit a controlled string and sidestep it entirely.
+2. Oj's `:rails` mode monkey-patches `JSON.generate` globally (via `Oj::Rails.mimic_JSON`), which can affect other code in your process.
+
+Ensure that you have the `Oj` gem installed in your Gemfile if you use either option above:
 
 ```ruby
 # Gemfile

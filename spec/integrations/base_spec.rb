@@ -738,6 +738,23 @@ describe '::Base' do
     end
   end
 
+  describe 'a configured encoder callable' do
+    after { reset_blueprinter_config! }
+
+    let(:blueprint) do
+      Class.new(Blueprinter::Base) do
+        identifier :id
+        field :first_name
+      end
+    end
+
+    it 'serializes the rendered hash through the encoder instead of the generator' do
+      Blueprinter.configure { |config| config.encoder = ->(hash) { "count=#{hash.size}" } }
+
+      expect(blueprint.render(OpenStruct.new(id: 1, first_name: 'Meg'))).to eq('count=2')
+    end
+  end
+
   describe 'identifier' do
     let(:rendered) do
       blueprint.render_as_hash(OpenStruct.new(uid: 42))

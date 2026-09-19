@@ -1,4 +1,6 @@
 ## Unreleased
+- 🚀 [FEATURE] Adds `config.encoder`, a callable invoked with the prepared hash to serialize it to JSON. It takes precedence over `config.generator`/`config.method` and is resolved once at configure time, making encoders that need options (e.g. `->(hash) { Oj.dump(hash, mode: :rails) }`) expressible without a shim class.
+- 📝 [DOCS] Rewrites the JSON-encoder guidance: on modern Ruby the stdlib `json` extension outperforms `config.generator = Oj` (which routes to `Oj.generate`), and documents `datetime_format` as a performance lever (pre-formatting `Time` avoids the encoder's slow generic path).
 - 🐛 [BUGFIX] Fixes broken memoization of field-level `:if`/`:unless` conditions. Because `callable_from` returns `false` when no condition is configured, `||=` never memoized it, so conditions were re-resolved (including a global configuration lookup) for every field of every rendered object. Renders are now ~1.6x faster. Memoized conditions are keyed on a `Blueprinter::Configuration` generation counter that the compiled-attribute writers (and `reset_configuration!`) bump, so mutating global `config.if`/`config.unless` after a render still takes effect on the next render while keeping the hot path an integer comparison.
 
 ## 1.3.0 - 2026/04/14
