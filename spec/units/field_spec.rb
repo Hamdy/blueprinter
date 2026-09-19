@@ -143,16 +143,38 @@ describe '::Field' do
         expect(subject.skip?(:first_name, object, {})).to be_falsey
       end
 
-      # Documents the deliberate trade-off of memoizing: conditions are snapshotted per field on
-      # first use, so global config must be set before rendering. Consistent with
-      # `config.sort_fields_by`, which ViewCollection snapshots at construction.
-      it 'snapshots the global condition on first use' do
+      # The invalidation caveat: memoized conditions are keyed on Configuration.generation, and the
+      # `config.if=`/`config.unless=` writers bump that generation. So global config set *after* a
+      # field has already resolved still takes effect on the next call -- the memoization is a hot
+      # path optimization, not a snapshot that silently ignores later reconfiguration.
+      it 'picks up a global :if configured after first use' do
         subject = field
         expect(subject.skip?(:first_name, object, {})).to be_falsey
 
         Blueprinter.configure { |config| config.if = ->(_name, _object, _opts) { false } }
 
+        expect(subject.skip?(:first_name, object, {})).to be(true)
+      end
+
+      it 'picks up a global :unless configured after first use' do
+        subject = field
         expect(subject.skip?(:first_name, object, {})).to be_falsey
+
+        Blueprinter.configure { |config| config.unless = ->(_name, _object, _opts) { true } }
+
+        expect(subject.skip?(:first_name, object, {})).to be(true)
+      end
+
+      # Guards the hot path: absent any reconfiguration the generation is unchanged, so the field
+      # must not re-resolve (which would re-read global configuration per call, the original bug).
+      it 'does not re-resolve while the configuration generation is unchanged' do
+        subject = field
+        subject.skip?(:first_name, object, {})
+
+        allow(subject).to receive(:callable_from).and_call_original
+        5.times { subject.skip?(:first_name, object, {}) }
+
+        expect(subject).not_to have_received(:callable_from)
       end
     end
   end

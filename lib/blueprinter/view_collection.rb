@@ -30,6 +30,7 @@ module Blueprinter
       @sort_by_definition = Blueprinter.configuration.sort_fields_by.eql?(:definition)
       @cache_mutex = Mutex.new
       @cache = nil
+      @cache_generation = nil
     end
 
     def inherit(view_collection)
@@ -59,6 +60,19 @@ module Blueprinter
       ensure_cached!
 
       @cache[:fields][view_name]
+    end
+
+    # Returns an array of compiled render closures for the provided View, one per field.
+    #
+    # Each closure captures its field's per-field decisions (extractor, datetime formatting,
+    # defaults, :if/:unless) resolved once at compile time, so the render loop just calls each with
+    # (result_hash, object, local_options). See Field#compile.
+    # @param [String] view_name
+    # @return [Array<Proc>]
+    def compiled_fields_for(view_name)
+      ensure_cached!
+
+      @cache[:compiled][view_name]
     end
 
     # Returns an array of Transformer objects for the provided View.
@@ -91,22 +105,33 @@ module Blueprinter
     end
 
     def ensure_cached!
-      # Fast path: no lock needed once the cache is populated (atomic reference read).
-      return if @cache
+      generation = Blueprinter::Configuration.generation
+
+      # Fast path: no lock needed once the cache is populated for the current configuration
+      # generation (atomic reference read plus an integer comparison). The generation guard is what
+      # lets compiled closures bake in global config (datetime_format, field_default, :if/:unless):
+      # mutating any of those bumps the generation and forces a rebuild here.
+      return if @cache && @cache_generation == generation
 
       @cache_mutex.synchronize do
-        # Re-check after acquiring the lock; another thread may have built the cache first.
-        return if @cache
+        # Re-read under the lock; configuration may have changed, or another thread may have built
+        # the cache first.
+        generation = Blueprinter::Configuration.generation
+        return if @cache && @cache_generation == generation
 
         fields = {}
         transformers = {}
+        compiled = {}
 
         views.each_key do |view_name|
-          fields[view_name] = build_fields_for(view_name).freeze
+          view_fields = build_fields_for(view_name).freeze
+          fields[view_name] = view_fields
+          compiled[view_name] = view_fields.map(&:compile).freeze
           transformers[view_name] = build_transformers(view_name).freeze
         end
 
-        @cache = { fields: fields.freeze, transformers: transformers.freeze }.freeze
+        @cache = { fields: fields.freeze, transformers: transformers.freeze, compiled: compiled.freeze }.freeze
+        @cache_generation = generation
       end
     end
 
